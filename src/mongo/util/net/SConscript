@@ -59,6 +59,7 @@ env.Library(
     target='ssl_options_server',
     source=[
         'ssl_options_server.cpp',
+        'ssl_vault_client.cpp',
         'ssl_options_server.idl',
     ],
     LIBDEPS=[
@@ -69,6 +70,7 @@ env.Library(
         '$BUILD_DIR/mongo/db/auth/cluster_auth_mode',
         '$BUILD_DIR/mongo/db/server_options_core',
         '$BUILD_DIR/mongo/idl/server_parameter',
+        'http_client',
         '$BUILD_DIR/mongo/util/options_parser/options_parser',
     ]
 )
@@ -289,4 +291,3 @@ if get_option('ssl') == 'on':
             '$BUILD_DIR/mongo/util/version_impl',
         ],
 )
-

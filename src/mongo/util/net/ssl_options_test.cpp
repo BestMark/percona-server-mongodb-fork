@@ -184,6 +184,55 @@ TEST(SetupOptions, sslModeDisabled) {
     ASSERT_EQ(::mongo::sslGlobalParams.sslMode.load(), ::mongo::sslGlobalParams.SSLMode_disabled);
 }
 
+TEST(SetupOptions, tlsVaultParametersAreParsed) {
+    moe::startupOptions = moe::OptionSection();
+    moe::startupOptionsParsed = moe::Environment();
+
+    ASSERT_OK(::mongo::addGeneralServerOptions(&moe::startupOptions));
+    ASSERT_OK(addSSLServerOptions());
+
+    std::vector<std::string> argv;
+    argv.push_back("binaryname");
+    argv.push_back("--tlsMode");
+    argv.push_back("disabled");
+    argv.push_back("--net.tls.vault.enabled");
+    argv.push_back("--net.tls.vault.host");
+    argv.push_back("hashicorp.vault.net");
+    argv.push_back("--net.tls.vault.port");
+    argv.push_back("443");
+    argv.push_back("--net.tls.vault.tlsEnabled");
+    argv.push_back("true");
+    argv.push_back("--net.tls.vault.tls.connectCAFile");
+    argv.push_back("jstests/libs/ca.pem");
+    argv.push_back("--net.tls.vault.namespace");
+    argv.push_back("A/TEST");
+    argv.push_back("--net.tls.vault.roleId");
+    argv.push_back("role-id");
+    argv.push_back("--net.tls.vault.secretId");
+    argv.push_back("secret-id");
+    argv.push_back("--net.tls.vault.mountPath");
+    argv.push_back("MONGODB/PKI/pki-test1-ext");
+    argv.push_back("--net.tls.vault.roleName");
+    argv.push_back("mongodb");
+    argv.push_back("--net.tls.vault.certificateCN");
+    argv.push_back("mongo1.example.net");
+
+    OptionsParserTester parser;
+    ASSERT_OK(parser.run(moe::startupOptions, argv, &moe::startupOptionsParsed));
+    ASSERT_NOT_OK(storeSSLServerOptions());
+
+    ASSERT_EQ(::mongo::sslGlobalParams.tlsVaultEnabled, true);
+    ASSERT_EQ(::mongo::sslGlobalParams.tlsVaultHost, "hashicorp.vault.net");
+    ASSERT_EQ(::mongo::sslGlobalParams.tlsVaultPort, 443);
+    ASSERT_EQ(::mongo::sslGlobalParams.tlsVaultTLSEnabled, true);
+    ASSERT_EQ(::mongo::sslGlobalParams.tlsVaultNamespace, "A/TEST");
+    ASSERT_EQ(::mongo::sslGlobalParams.tlsVaultRoleId, "role-id");
+    ASSERT_EQ(::mongo::sslGlobalParams.tlsVaultSecretId, "secret-id");
+    ASSERT_EQ(::mongo::sslGlobalParams.tlsVaultMountPath, "MONGODB/PKI/pki-test1-ext");
+    ASSERT_EQ(::mongo::sslGlobalParams.tlsVaultRoleName, "mongodb");
+    ASSERT_EQ(::mongo::sslGlobalParams.tlsVaultCertificateCN, "mongo1.example.net");
+}
+
 TEST(SetupOptions, tlsModeRequired) {
     moe::startupOptions = moe::OptionSection();
     moe::startupOptionsParsed = moe::Environment();
