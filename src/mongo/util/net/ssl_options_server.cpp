@@ -35,6 +35,8 @@
 #include "mongo/util/net/ssl_options.h"
 
 #include <boost/filesystem/operations.hpp>
+#include <fstream>
+#include <utility>
 
 #include "mongo/base/status.h"
 #include "mongo/config.h"
@@ -43,6 +45,8 @@
 #include "mongo/logv2/log.h"
 #include "mongo/util/options_parser/startup_option_init.h"
 #include "mongo/util/options_parser/startup_options.h"
+#include "mongo/util/net/ssl_vault_client.h"
+#include "mongo/util/str.h"
 #include "mongo/util/text.h"
 
 #if MONGO_CONFIG_SSL_PROVIDER == MONGO_CONFIG_SSL_PROVIDER_OPENSSL
@@ -85,6 +89,20 @@ Status storeTLSLogVersion(const std::string& loggedProtocols) {
 namespace {
 
 bool gImplicitDisableTLS10 = false;
+
+std::string writeTemporaryPemFile(StringData prefix, const std::string& pemData) {
+    const auto path = boost::filesystem::temp_directory_path() /
+        boost::filesystem::unique_path(str::stream() << "mongo-vault-" << prefix << "-%%%%%%.pem");
+    std::ofstream out(path.string(), std::ios::out | std::ios::trunc | std::ios::binary);
+    uassert(ErrorCodes::FileNotOpen,
+            str::stream() << "Failed to create temporary file '" << path.generic_string() << "'",
+            out.is_open());
+    out << pemData;
+    out.close();
+    boost::filesystem::permissions(path,
+                                   boost::filesystem::owner_read | boost::filesystem::owner_write);
+    return path.generic_string();
+}
 
 // storeSSLServerOptions depends on serverGlobalParams.clusterAuthMode
 // and IDL based storage actions, and therefore must run later.
@@ -137,6 +155,37 @@ MONGO_STARTUP_OPTIONS_POST(SSLServerOptions)(InitializerContext*) {
         sslGlobalParams.sslCRLFile =
             boost::filesystem::absolute(params["net.tls.CRLFile"].as<std::string>())
                 .generic_string();
+    }
+    if (!sslGlobalParams.tlsVaultTLSConnectCAFile.empty()) {
+        sslGlobalParams.tlsVaultTLSConnectCAFile =
+            boost::filesystem::absolute(sslGlobalParams.tlsVaultTLSConnectCAFile).generic_string();
+    }
+
+    if (sslGlobalParams.tlsVaultEnabled) {
+        SSLVaultConfig vaultConfig;
+        vaultConfig.host = sslGlobalParams.tlsVaultHost;
+        vaultConfig.port = sslGlobalParams.tlsVaultPort;
+        vaultConfig.tlsEnabled = sslGlobalParams.tlsVaultTLSEnabled;
+        vaultConfig.tlsConnectCAFile = sslGlobalParams.tlsVaultTLSConnectCAFile;
+        vaultConfig.nameSpace = sslGlobalParams.tlsVaultNamespace;
+        vaultConfig.roleId = sslGlobalParams.tlsVaultRoleId;
+        vaultConfig.secretId = sslGlobalParams.tlsVaultSecretId;
+        vaultConfig.mountPath = sslGlobalParams.tlsVaultMountPath;
+        vaultConfig.roleName = sslGlobalParams.tlsVaultRoleName;
+        vaultConfig.certificateCN = sslGlobalParams.tlsVaultCertificateCN;
+        SSLVaultClient vaultClient(std::move(vaultConfig));
+        const auto tlsMaterial = vaultClient.issueTLSCertificate();
+        sslGlobalParams.sslPEMKeyFile =
+            writeTemporaryPemFile("certificate-key"_sd,
+                                  str::stream() << tlsMaterial.certificatePem << "\n"
+                                                << tlsMaterial.privateKeyPem << "\n");
+        sslGlobalParams.sslCAFile =
+            writeTemporaryPemFile("ca-chain"_sd, tlsMaterial.caChainPem);
+        LOGV2(9801000,
+              "Loaded TLS certificate and CA chain from HashiCorp Vault PKI engine",
+              "vaultHost"_attr = sslGlobalParams.tlsVaultHost,
+              "vaultMountPath"_attr = sslGlobalParams.tlsVaultMountPath,
+              "vaultRoleName"_attr = sslGlobalParams.tlsVaultRoleName);
     }
 
     if (params.count("net.tls.tlsCipherConfig")) {
@@ -230,6 +279,7 @@ MONGO_STARTUP_OPTIONS_POST(SSLServerOptions)(InitializerContext*) {
                sslGlobalParams.sslClusterFile.size() || sslGlobalParams.sslClusterPassword.size() ||
                sslGlobalParams.sslCAFile.size() || sslGlobalParams.sslCRLFile.size() ||
                sslGlobalParams.sslCipherConfig != kSSLCipherConfigDefault ||
+               sslGlobalParams.tlsVaultEnabled ||
                params.count("net.tls.disabledProtocols") ||
 #ifdef MONGO_CONFIG_SSL_CERTIFICATE_SELECTORS
                params.count("net.tls.certificateSelector") ||

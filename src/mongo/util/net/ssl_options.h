@@ -101,6 +101,18 @@ struct SSLParams {
         false;  // --setParameter suppressNoTLSPeerCertificateWarning
     bool tlsWithholdClientCertificate = false;  // --setParameter tlsWithholdClientCertificate
 
+    bool tlsVaultEnabled = false;                // --net.tls.vault.enabled
+    std::string tlsVaultHost;                    // --net.tls.vault.host
+    int tlsVaultPort = 8200;                     // --net.tls.vault.port
+    bool tlsVaultTLSEnabled = true;              // --net.tls.vault.tlsEnabled
+    std::string tlsVaultTLSConnectCAFile;        // --net.tls.vault.tls.connectCAFile
+    std::string tlsVaultNamespace;               // --net.tls.vault.namespace
+    std::string tlsVaultRoleId;                  // --net.tls.vault.roleId
+    std::string tlsVaultSecretId;                // --net.tls.vault.secretId
+    std::string tlsVaultMountPath;               // --net.tls.vault.mountPath
+    std::string tlsVaultRoleName;                // --net.tls.vault.roleName
+    std::string tlsVaultCertificateCN;           // --net.tls.vault.certificateCN
+
     SSLParams() : sslCipherConfig(kSSLCipherConfigDefault) {
         sslMode.store(SSLMode_disabled);
     }
